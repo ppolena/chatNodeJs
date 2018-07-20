@@ -31,13 +31,19 @@
     <script>
     $(function () {
         var socket = io();
+        socket.emit('authorization', { accountId: "", authorization: ""})
         $('#form').submit(function(){
-            socket.emit('newMessage', { accountId: $('#accountId').val() , data: $('#message').val()});
-            $('#message').val('');
+            socket.emit('newMessage', /*{ type: $('#type').val(),  accountId: $('#accountId').val(), data: */$('#data').val() /*}*/ );
+            /*$('#type').val('');
+            $('#accountId').val('');*/
+            $('#data').val('');
             return false;
         });
-        socket.on('sendMessage', function(msg){
-            $('#output').append("<li>" + msg + "</li>");
+        socket.on('sendMessage', function(data){
+            $('#output').append("<li>" + data + "</li>");
+        });
+        socket.on('message', function(data){
+            $('#output').append("<li>" + data + "</li>");
         });
     });
     </script>
@@ -45,8 +51,9 @@
 <body>
     <div id = "main-content">
         <form id = "form">
-            Account ID: <input type = "text" id = "accountId"></input>
-            Message: <input type = "text" id = "message"></input>
+            <!--Type: <input type = "text" id = "type"></input>
+            Account ID: <input type = "text" id = "accountId"></input>-->
+            Data: <input type = "text" id = "data"></input>
             <input type = "submit">
         </form>
         <ul id = "output"></ul>
