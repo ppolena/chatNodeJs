@@ -109,8 +109,8 @@ app.get('/channel', function(request, response){
     })
 });
 
-app.get('/channel/by-name/:channel_name', function(request, response){
-    const channelName = request.params.channel_name;
+app.get('/channel/by-name/:channelName', function(request, response){
+    const channelName = request.params.channelName;
     const queryGetChannelByName = {
         text: "SELECT * FROM channel WHERE channel_name = $1",
         values: [channelName]
@@ -131,12 +131,12 @@ app.get('/channel/by-name/:channel_name', function(request, response){
     })
 });
 
-app.get('/channel/by-name/:channel_name/messages', function(request, response){
+app.get('/channel/by-name/:channelName/messages', function(request, response){
     let minutes = 0;
     if(request.query.minutes !== undefined) {
         minutes = request.query.minutes;
     }
-    const channelName = request.params.channel_name;
+    const channelName = request.params.channelName;
     const queryGetChannelMessages = {
         text: "SELECT * FROM message WHERE channel_name = $1",
         values: [channelName]
@@ -193,8 +193,8 @@ app.post('/channel', function(request, response){
     })
 });
 
-app.post('/channel/:channel_name/message', function(request, response){
-    const channelName = request.params.channel_name;
+app.post('/channel/:channelName/message', function(request, response){
+    const channelName = request.params.channelName;
     const accountId = rrequesteq.body.accountId;
     const authorization = request.body.authorization;
     const data = request.body.data;
@@ -240,8 +240,8 @@ app.post('/channel/:channel_name/message', function(request, response){
     })
 })
 
-app.patch('/channel/by-name/:channel_name', function(request, response){
-    const channelName = request.params.channel_name;
+app.patch('/channel/by-name/:channelName', function(request, response){
+    const channelName = request.params.channelName;
     const channelStatus = request.body.status;
     const querySetChannelStatus = {
         text: "UPDATE channel SET status = $1 WHERE channel_name = $2",
@@ -271,9 +271,9 @@ var sockets = new Map();
 
 var sessionData = new Map();
 
-app.get('/channel/:channel_name', function(request, response){
+app.get('/channel/:channelName', function(request, response){
     
-    const channelName = request.params.channel_name;
+    const channelName = request.params.channelName;
 
     const  queryCheckIfChannelExists = {
         text: 'SELECT * FROM channel WHERE channel_name = $1',
