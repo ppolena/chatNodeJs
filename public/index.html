@@ -30,22 +30,24 @@
     <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
     <script>
     $(function () {
-        var socket = io();
-        socket.emit('authorization', { accountId: "", authorization: ""})
+        var session = io();
+        session.emit('authorization', { accountId: "", authorization: ""})
         $('#form').submit(function(){
-            socket.emit('newMessage', $('#data').val());
-            
+            session.emit('newMessage', $('#data').val());
             $('#data').val('');
             return false;
         });
-        socket.on('message', function(data){
-            $('#output').append("<li>" + data + "</li>");
+        session.on('welcome', function(incomingMessage){
+            $('#output').append("<tr><td><h1>Welcome " + incomingMessage.displayName + "!</h1></td></tr>");
         });
-        socket.on('loginMessage', function(data){
-            $('#output').append("<li>" + data + "</li>");
+        session.on('login', function(incomingMessage){
+            $('#output').append("<tr><td><b>" + incomingMessage.displayName + " logged in.</b></td></tr>");
         });
-        socket.on('sendMessage', function(incomingMessage){
-            $('#output').append("<li>" + incomingMessage.displayName + ": " + incomingMessage.data + "</li>");
+        session.on('logout', function(incomingMessage){
+            $('#output').append("<tr><td><b>" + incomingMessage.displayName + " logged out.</b></td></tr>");
+        });
+        session.on('sendMessage', function(incomingMessage){
+            $('#output').append("<tr><td>" + incomingMessage.displayName + ": " + incomingMessage.data + "</td></tr>");
         });
     });
     </script>
@@ -53,11 +55,13 @@
 <body>
     <div id = "main-content">
         <form id = "form">
-            
             Data: <input type = "text" id = "data"></input>
             <input type = "submit">
         </form>
-        <ul id = "output"></ul>
+        <table>
+            <tbody id="output">
+            </tbody>
+        </table>
     </div>
 </body>
 </html>

@@ -2,6 +2,7 @@ const app = require('express')();
 const http = require('http').Server(app);
 const uuidv4 = require('uuid/v4');
 const bodyParser = require('body-parser')
+const socket = require('socket.io')(http)
 app.use(bodyParser.urlencoded({
     extended: true
 }));
@@ -47,8 +48,8 @@ function shouldAbort(err, client, done){
         client.query('ROLLBACK', (err) => {
             if (err) console.error('Error rolling back client!');
             console.log("Rolling back...");
-            done()
-            console.log("Done.")
+            done();
+            console.log("Done.");
         })
     }
     return !!err 
@@ -70,7 +71,7 @@ pool.connect((err, client, done) => {
                     console.log("Message table doesn't exist. Creating...");
                     client.query('COMMIT', (err) => {
                         if (err) console.error('Error committing transaction: ', err.message);
-                        done()
+                        done();
                     })
                 })
             }
@@ -81,7 +82,7 @@ pool.connect((err, client, done) => {
                     console.log("Message table doesn't exist. Creating...");
                     client.query('COMMIT', (err) => {
                         if (err) console.error('Error committing transaction: ', err.message);
-                        done()
+                        done();
                     })
                 })
             }
@@ -99,7 +100,7 @@ app.get('/channel', function(request, response){
             if (shouldAbort(err, client, done)) return
             client.query(queryGetChannels, (err, res) => {
                 if (shouldAbort(err, client, done)){
-                    response.sendStatus(404)
+                    response.sendStatus(404);
                     return
                 }
                 if(res.rowCount != 0)response.send(res.rows);
@@ -121,7 +122,7 @@ app.get('/channel/by-name/:channelName', function(request, response){
             if (shouldAbort(err, client, done)) return
             client.query(queryGetChannelByName, (err, res) => {
                 if (shouldAbort(err, client, done)){
-                    response.sendStatus(404)
+                    response.sendStatus(404);
                     return
                 }
                 if(res.rowCount == 1) response.send(res.rows[0]);
@@ -147,7 +148,7 @@ app.get('/channel/by-name/:channelName/messages', function(request, response){
             if (shouldAbort(err, client, done)) return
             client.query(queryGetChannelMessages, (err, res) => {
                 if (shouldAbort(err, client, done)){
-                    response.sendStatus(500)
+                    response.sendStatus(500);
                     return
                 }
                 if(minutes !== 0){
@@ -170,7 +171,6 @@ app.post('/channel', function(request, response){
         text: 'INSERT INTO channel(channel_name, status, date_of_creation, date_of_closing) VALUES($1, $2, $3, $4)',
         values: [channelName, Status[channelStatus], new Date(Date.now()), null]
     }
-
     pool.connect((err, client, done) => {
         if (shouldAbort(err, client, done)) return
         client.query('BEGIN', (err) => {
@@ -205,12 +205,10 @@ app.post('/channel/:channelName/message', function(request, response){
             'authorization': authorization
         }
     };
-
     const queryNewMessage = {
         text : "INSERT INTO message(message_id, account_id, data, date_of_creation, channel_name) VALUES($1, $2, $3, $4, $5)",
         values : [uuidv4(), accountId, data, new Date(Date.now()), channelName]
     }
-
     req.get(options, function(err, res, body){
         if(!err && res.statusCode == 200){
             const responseJson = JSON.parse(body);
@@ -225,8 +223,8 @@ app.post('/channel/:channelName/message', function(request, response){
                             client.query('COMMIT', (err) => {
                                 if (err) console.error('Error committing transaction: ', err.message);
                                 else console.log("Message saved.");
+                                done();
                                 response.sendStatus(201);
-                                done()
                             })
                         })
                     })
@@ -253,12 +251,12 @@ app.patch('/channel/by-name/:channelName', function(request, response){
             if (shouldAbort(err, client, done)) return
             client.query(querySetChannelStatus, (err, res) => {
                 if (shouldAbort(err, client, done)){
-                    response.sendStatus(404)
+                    response.sendStatus(404);
                     return
                 }
                 client.query('COMMIT', (err) => {
                     if (err) console.error('Error committing transaction: ', err.message);
-                    done()
+                    done();
                     response.sendStatus(200);
                     console.log("Channel status updated.");
                 })
@@ -267,19 +265,14 @@ app.patch('/channel/by-name/:channelName', function(request, response){
     })
 })
 
-var sockets = new Map();
-
 var sessionData = new Map();
 
 app.get('/channel/:channelName', function(request, response){
-    
     const channelName = request.params.channelName;
-
     const  queryCheckIfChannelExists = {
         text: 'SELECT * FROM channel WHERE channel_name = $1',
         values: [channelName] 
     }
-
     pool.connect((err, client, done) => {
         if (shouldAbort(err, client, done)) return
         client.query('BEGIN', (err) => {
@@ -290,105 +283,101 @@ app.get('/channel/:channelName', function(request, response){
                     return
                 }
                 else if(res.rowCount != 0){
+                    done();
                     response.sendFile(__dirname + '/public/index.html');
-                    if(sockets.get(channelName) === undefined){
-                        console.log("There is no socket for the channel! Creating...");
-                        const socket = require('socket.io')(http)
-                        socket.on('connection', function(session){
-                            console.log('User connected. Session ID: ' + session.id);
-                            session.on('authorization', function(authorizationJson){
-                                const authorizationRequest = require('request');
-                                const options = {
-                                    url:    'https://dev.onair-backend.moon42.com/api/business-layer/v1/chat/account/' + 
-                                            authorizationJson.accountId + 
-                                            '/channel/' + 
-                                            channelName,
-                                    headers: {
-                                        'authorization': authorizationJson.authorization
-                                    }
-                                };
-                                authorizationRequest.get(options, function(error, apiResponse, body){
-                                    if(!error && apiResponse.statusCode == 200){
-                                        const responseJson = JSON.parse(body);
-                                        sessionData.set(session.id, responseJson);
-                                        if(sessionData.get(session.id).canRead){
-                                            session.send('<h1>Welcome ' + responseJson.displayName + '!</h1>')
-                                            session.broadcast.emit('loginMessage', responseJson.displayName + ' connected.')
-                                            const listChannelMessagesRequest = require('request');
-                                            const options = {
-                                                url: 'http://localhost:8080/channel/by-name/' + channelName + '/messages/?minutes=30'
-                                            }
-                                            listChannelMessagesRequest.get(options, function(error, listChannelMessagesResponse, body){
-                                                if(!error && listChannelMessagesResponse.statusCode == 200){
-                                                    const responseJson = JSON.parse(body);
-                                                    responseJson.forEach(function(i){ 
-                                                        session.send(   sessionData.get(session.id).displayName + 
-                                                                        ' on ' + 
-                                                                        new Date(Date.parse(i.date_of_creation)) + 
-                                                                        ': ' + 
-                                                                        i.data) 
-                                                    });
-                                                }
-                                                else{
-                                                    response.sendStatus(listChannelMessagesResponse.statusCode)
-                                                    console.log(listChannelMessagesResponse.statusCode);
-                                                }
-                                            })
-                                        }
-                                        else{
-                                            session.send("NOT AUTHORIZED TO READ");
-                                            console.log("USER NOT AUTHORIZED TO READ");
-                                        }
-                                    }
-                                    else{
-                                        session.send("NOT AUTHORIZED");
-                                        console.log("USER NOT AUTHORIZED");
-                                    }
-                                })
-                            })
-                            session.on('newMessage', function(data){
-                                if(sessionData.get(session.id) !== undefined && sessionData.get(session.id).canWrite){
-                                    socket.emit('sendMessage', {'displayName': sessionData.get(session.id).displayName, 'data': data});
-                                    const queryNewMessage = {
-                                        text : "INSERT INTO message(message_id, account_id, data, date_of_creation, channel_name) VALUES($1, $2, $3, $4, $5)",
-                                        values : [uuidv4(), sessionData.get(session.id).accountId, data, new Date(Date.now()), channelName]
-                                    }
-                                    pool.connect((err, client, done) => {
-                                        if (shouldAbort(err, client, done)) return
-                                        client.query('BEGIN', (err) => {
-                                            if (shouldAbort(err, client, done)) return
-                                            client.query(queryNewMessage, (err, res) => {
-                                                if (shouldAbort(err, client, done)) return
-                                                client.query('COMMIT', (err) => {
-                                                    if (err) console.error('Error committing transaction', err.message);
-                                                    else console.log("Message saved.");
-                                                    done()
-                                                })
-                                            })
-                                        })
-                                    })
-                                }
-                                else{
-                                    session.send("NOT AUTHORIZED TO WRITE");
-                                    console.log("USER NOT AUTHORIZED TO WRITE");
-                                }
-                            })
-                            session.on('disconnect', function(){
-                                console.log('User disconnected.');
-                                sessionData.delete(session.id);
-                            })
-                            sockets.set(channelName, socket);
-                        })
-                    }
-                    else console.log("Socket already exists!");
-                    done()
                 }
                 else{
-                    done()
+                    done();
                     response.sendStatus(404);
                 }
             })
         })
     })
 });
+
+socket.on('connection', function(session){
+    const header = session.request.headers.referer.split('/');
+    const channelName = header[header.length-1];
+    console.log('User connected. Session ID: ' + session.id);
+    session.on('authorization', function(authorizationJson){
+        const authorizationRequest = require('request');
+        const options = {
+            url:    'https://dev.onair-backend.moon42.com/api/business-layer/v1/chat/account/' + authorizationJson.accountId + '/channel/' + channelName,
+            headers: {
+                'authorization': authorizationJson.authorization
+            }
+        };
+        authorizationRequest.get(options, function(error, apiResponse, body){
+            if(!error && apiResponse.statusCode == 200){
+                const responseJson = JSON.parse(body);
+                responseJson.channelName = channelName;
+                sessionData.set(session.id, responseJson);
+                session.join(sessionData.get(session.id).channelName);
+                if(sessionData.get(session.id).canRead){
+                    session.emit('welcome', {'displayName': responseJson.displayName});
+                    session.broadcast.to(sessionData.get(session.id).channelName).emit('login', {'displayName': responseJson.displayName});
+                    const listChannelMessagesRequest = require('request');
+                    const options = {
+                        url: 'http://localhost:8080/channel/by-name/' + sessionData.get(session.id).channelName + '/messages/?minutes=30'
+                    }
+                    listChannelMessagesRequest.get(options, function(error, listChannelMessagesResponse, body){
+                        if(!error && listChannelMessagesResponse.statusCode == 200){
+                            const responseJson = JSON.parse(body);
+                            responseJson.forEach(function(i){ 
+                                session.emit('history', sessionData.get(session.id).displayName + ' on ' + new Date(Date.parse(i.date_of_creation)) + ': ' + i.data);
+                            });
+                        }
+                        else{
+                            response.sendStatus(listChannelMessagesResponse.statusCode);
+                            console.log(listChannelMessagesResponse.statusCode);
+                        }
+                    })
+                }
+                else{
+                    session.send("NOT AUTHORIZED TO READ");
+                    console.log("USER NOT AUTHORIZED TO READ");
+                }
+            }
+            else{
+                session.send("NOT AUTHORIZED");
+                console.log("USER NOT AUTHORIZED");
+            }
+        })
+    })
+    session.on('newMessage', function(data){
+        if(sessionData.get(session.id) !== undefined && sessionData.get(session.id).canWrite){
+            socket.to(sessionData.get(session.id).channelName).emit('sendMessage', {'displayName': sessionData.get(session.id).displayName, 'data': data});
+            const queryNewMessage = {
+                text : "INSERT INTO message(message_id, account_id, data, date_of_creation, channel_name) VALUES($1, $2, $3, $4, $5)",
+                values : [uuidv4(), sessionData.get(session.id).accountId, data, new Date(Date.now()), sessionData.get(session.id).channelName]
+            }
+            pool.connect((err, client, done) => {
+                if (shouldAbort(err, client, done)) return
+                client.query('BEGIN', (err) => {
+                    if (shouldAbort(err, client, done)) return
+                    client.query(queryNewMessage, (err, res) => {
+                        if (shouldAbort(err, client, done)) return
+                        client.query('COMMIT', (err) => {
+                            if (err) console.error('Error committing transaction', err.message);
+                            else console.log("Message saved.");
+                            done()
+                        })
+                    })
+                })
+            })
+        }
+        else{
+            session.send("NOT AUTHORIZED TO WRITE");
+            console.log("USER NOT AUTHORIZED TO WRITE");
+        }
+    })
+    session.on('disconnect', function(){
+        if(sessionData.get(session.id) !== undefined){ 
+            session.broadcast.to(sessionData.get(session.id).channelName).emit('logout', {'displayName': sessionData.get(session.id).displayName});
+            sessionData.delete(session.id);
+        }
+        console.log('User disconnected.');
+    })
+})
+
 http.listen(8080, function(){ console.log('Listening on localhost:8080') });
